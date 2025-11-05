@@ -13,3 +13,9 @@ build/
 .idea/
 .DS_Store
 GIT
+
+# Prisma generated client
+/generated/
+**/generated/
+**/node_modules/
+/packages/*/node_modules
