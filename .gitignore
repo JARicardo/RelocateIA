@@ -1,0 +1,15 @@
+# Node
+node_modules/
+# pnpm lock
+pnpm-lock.yaml
+# envs
+.env
+.env.local
+# build / output
+dist/
+build/
+# IDEs
+.vscode/
+.idea/
+.DS_Store
+GIT
