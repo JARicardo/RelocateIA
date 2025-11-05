@@ -1,0 +1,19 @@
+model User {
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email               String    @unique
+  password            String
+  name                String?
+  role                Role      @default(USER)
+  deleted             Boolean   @default(false)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  lastLoginAt         DateTime?
+  failedLoginAttempts Int       @default(0)
+  passwordResetToken  String?   @unique
+  passwordResetExpiry DateTime?
+
+  @@index([email])
+  @@index([deleted])
+  @@map("users")
+  @@schema("app")
+}
