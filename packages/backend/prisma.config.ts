@@ -5,7 +5,7 @@ import path, { join } from "path";
 dotenv.config({ path: join(__dirname, ".env") });
 
 export default defineConfig({
-  schema: path.join("prisma",),
+  schema: path.join("prisma"),
   migrations: {
     path: "prisma/migrations",
   },

@@ -1,12 +1,12 @@
-import { PrismaClient } from './generated/prisma'
+import { PrismaClient } from '@prisma/client';
 import { env } from "prisma/config";
 import bcrypt from "bcrypt";
 
 const prisma = new PrismaClient();
 
 async function main() {
-  const password = env["ADMIN_PASSWORD"] || "admin123"; //
-  const hashed = await bcrypt.hash(password, 12); // 12 rounds recomendado
+  const password = env["ADMIN_PASSWORD"] || "admin123";
+  const hashed = await bcrypt.hash(password, 12);
 
   const existing = await prisma.user.findUnique({ where: { email: "admin@local" } });
   if (!existing) {
