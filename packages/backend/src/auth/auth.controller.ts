@@ -15,15 +15,15 @@ export class AuthController {
 
     constructor(private readonly authService: AuthService) { }
 
-    /**
-     * POST /auth/exists
-     * Body: { email }
-     * Respuesta: { exists: boolean }
-     * Status: 200
-     */
     @Post('register')
     @HttpCode(HttpStatus.OK)
-    async checkUserExists(@Body() dto: RegisterDto) {
-        return { "hey": true };
+    async register(@Body() dto: RegisterDto) {
+        try {
+            const user = await this.authService.register(dto)
+            return user
+        } catch (error) {
+            throw error
+        }
+        
     }
 }
