@@ -1,4 +1,4 @@
-import { Injectable, Inject, ConflictException, InternalServerErrorException } from '@nestjs/common';
+import { Injectable, Inject, ConflictException, InternalServerErrorException, Logger } from '@nestjs/common';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { RegisterDto } from 'src/auth/dto/register.dto';
 import * as bcrypt from 'bcrypt';
@@ -7,6 +7,7 @@ import * as bcrypt from 'bcrypt';
 export class AuthService {
   constructor(@Inject('PRISMA') private prisma: PrismaClient) { }
   private readonly saltRounds = 12;
+  private readonly logger = new Logger(AuthService.name);
 
   async register(dto: RegisterDto) {
     const { email, username, password } = dto;
@@ -20,6 +21,7 @@ export class AuthService {
         data: {
           email: email.toLowerCase().trim(),
           password: hashedPassword,
+          isEmailVerified: false,
         },
         select: {
           id: true,
@@ -31,15 +33,19 @@ export class AuthService {
 
       return user;
     } catch (err) {
-      if (err instanceof Prisma.PrismaClientKnownRequestError) {
-        if (err.code === 'P2002') {
-          // extraemos qué campo causó conflicto si está disponible
-          const metaTarget = (err.meta as any)?.target;
-          const field = Array.isArray(metaTarget) ? metaTarget.join(', ') : metaTarget;
-          throw new ConflictException(`Value already exists for field: ${field ?? 'unknown'}`);
-        }
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002'
+      ) {
+        this.logger.warn(`Registration attempt with existing email: ${email}`);
+
+        throw new ConflictException(
+          'Unable to create account with provided credentials',
+        );
       }
-      // cualquier otro error
+      this.logger.error(
+        `Unexpected error during registration for email: ${email}`,
+        err instanceof Error ? err.stack : undefined,
+      );
+
       throw new InternalServerErrorException('Error creating user');
     }
   }

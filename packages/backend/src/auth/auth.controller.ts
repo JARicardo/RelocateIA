@@ -6,6 +6,8 @@ import {
     HttpStatus,
     Logger,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
+
 import { AuthService } from './auth.service';
 import { RegisterDto } from 'src/auth/dto/register.dto';
 
@@ -16,14 +18,14 @@ export class AuthController {
     constructor(private readonly authService: AuthService) { }
 
     @Post('register')
+    @Throttle({
+        default: {
+            limit: 10,
+            ttl: 60,
+        },
+    })
     @HttpCode(HttpStatus.OK)
     async register(@Body() dto: RegisterDto) {
-        try {
-            const user = await this.authService.register(dto)
-            return user
-        } catch (error) {
-            throw error
-        }
-        
+        return this.authService.register(dto)
     }
 }

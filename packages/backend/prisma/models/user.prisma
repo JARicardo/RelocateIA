@@ -3,6 +3,7 @@ model User {
   username            String    @unique @default("")
   email               String    @unique
   password            String
+  isEmailVerified     Boolean  @default(false)
   name                String?
   role                Role      @default(USER)
   deleted             Boolean   @default(false)
