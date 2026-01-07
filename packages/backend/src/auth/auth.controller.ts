@@ -10,6 +10,7 @@ import { Throttle } from '@nestjs/throttler';
 
 import { AuthService } from './auth.service';
 import { RegisterDto } from 'src/auth/dto/register.dto';
+import { LoginDto } from 'src/auth/dto/login.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -27,5 +28,16 @@ export class AuthController {
     @HttpCode(HttpStatus.OK)
     async register(@Body() dto: RegisterDto) {
         return this.authService.register(dto)
+    }
+
+    @Post('login')
+    @Throttle({
+        default: {
+            limit: 5,
+            ttl: 60,
+        },
+    })
+    async login(@Body() dto: LoginDto) {
+        return this.authService.login(dto);
     }
 }
