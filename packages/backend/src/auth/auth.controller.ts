@@ -5,8 +5,10 @@ import {
     HttpCode,
     HttpStatus,
     Logger,
+    Req,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
+import type { Request } from 'express';
 
 import { AuthService } from './auth.service';
 import { RegisterDto } from 'src/auth/dto/register.dto';
@@ -37,7 +39,24 @@ export class AuthController {
             ttl: 60,
         },
     })
-    async login(@Body() dto: LoginDto) {
-        return this.authService.login(dto);
+    async login(@Body() dto: LoginDto, @Req() request: Request) {
+        const user = await this.authService.login(dto);
+
+        // Session management
+        await new Promise<void>((resolve, reject) => {
+            request.session.regenerate((err) => {
+                if (err) return reject(err);
+                resolve();
+            });
+        });
+
+        request.session.userId = user.id;
+        request.session.username = user.username;
+        request.session.isEmailVerified = user.isEmailVerified;
+
+        return {
+            id: user.id,
+            email: user.email,
+        }
     }
 }
