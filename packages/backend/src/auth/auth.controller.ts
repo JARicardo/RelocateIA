@@ -2,18 +2,26 @@ import {
     Body,
     Controller,
     Post,
+    Get,
     HttpCode,
     HttpStatus,
     Logger,
     Req,
-    Res
+    Res,
+    UseGuards
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 
+//SERVICES
 import { AuthService } from './auth.service';
+
+//DTOs
 import { RegisterDto } from 'src/auth/dto/register.dto';
 import { LoginDto } from 'src/auth/dto/login.dto';
+
+//GUARDS
+import { IsAuthenticatedGuard } from 'src/auth/guards/is_authtenticated.guard';
 
 @Controller('auth')
 export class AuthController {
@@ -82,5 +90,11 @@ export class AuthController {
             res.clearCookie('connect.sid');
             return res.status(200).json({ message: 'Logged out' });
         });
+    }
+
+    @UseGuards(IsAuthenticatedGuard)
+    @Get('me')
+    getMe(@Req() req: Request) {
+        return { userId: req.session.userId };
     }
 }
