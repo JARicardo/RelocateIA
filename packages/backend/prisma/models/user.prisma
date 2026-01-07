@@ -1,5 +1,5 @@
 model User {
-  id                  String    @id @default(dbgenerated("gen_random_uuid()"))
+  id                  String    @id @default(uuid())
   username            String    @unique @default("")
   email               String    @unique
   password            String
@@ -17,5 +17,5 @@ model User {
   @@index([email])
   @@index([deleted])
   @@map("users")
-  @@schema("app")
+  //@@schema("app") used for postgres
 }
