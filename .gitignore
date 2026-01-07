@@ -19,3 +19,9 @@ GIT
 **/generated/
 **/node_modules/
 /packages/*/node_modules
+
+# SQLite database files
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
