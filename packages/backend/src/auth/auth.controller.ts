@@ -6,9 +6,10 @@ import {
     HttpStatus,
     Logger,
     Req,
+    Res
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 
 import { AuthService } from './auth.service';
 import { RegisterDto } from 'src/auth/dto/register.dto';
@@ -58,5 +59,28 @@ export class AuthController {
             id: user.id,
             email: user.email,
         }
+    }
+
+    @Post('logout')
+    async logout(@Req() req: Request, @Res() res: Response) {
+        const userId = req.session?.userId;
+
+        if (userId) {
+            this.logger.log(`User logged out: ${userId}`);
+        }
+
+        if (!req.session) {
+            return res.status(200).json({ message: 'Logged out' });
+        }
+
+        req.session.destroy((err) => {
+            if (err) {
+                this.logger.error('Error destroying session', err.stack);
+                return res.status(200).json({ message: 'Logged out' });
+            }
+
+            res.clearCookie('connect.sid');
+            return res.status(200).json({ message: 'Logged out' });
+        });
     }
 }
