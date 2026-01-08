@@ -1,0 +1,9 @@
+{
+	"dependencies": {
+		"argon2": "^0.44.0",
+		"zxcvbn": "^4.4.2"
+	},
+	"devDependencies": {
+		"@types/zxcvbn": "^4.4.5"
+	}
+}

@@ -22,10 +22,16 @@ import { EmailVerificationService } from 'src/modules/auth/services/email-verifi
 import { RegisterDto } from 'src/modules/auth/dto/register.dto';
 import { LoginDto } from 'src/modules/auth/dto/login.dto';
 import { VerifyEmailDto } from 'src/modules/auth/dto/verify-email.dto';
-import { ResendVerificationDto} from 'src/modules/auth/dto/resend-verification.dto';
+import { ResendVerificationDto } from 'src/modules/auth/dto/resend-verification.dto';
+import { RequestPasswordResetDto } from 'src/modules/auth/dto/request-password-reset.dto';
+import { ConfirmPasswordResetDto } from 'src/modules/auth/dto/confirm-password-reset.dto';
 
 //GUARDS
 import { IsAuthenticatedGuard } from 'src/modules/auth/guards/is_authtenticated.guard';
+
+//ERRORS
+import { WeakPasswordError } from 'src/modules/auth/errors/weak-password.error';
+import { BadRequestException } from '@nestjs/common/exceptions/bad-request.exception';
 
 @Controller('auth')
 export class AuthController {
@@ -45,7 +51,14 @@ export class AuthController {
     })
     @HttpCode(HttpStatus.OK)
     async register(@Body() dto: RegisterDto) {
-        return this.authService.register(dto)
+        try {
+            await this.authService.register(dto);
+        } catch (err) {
+            if (err instanceof WeakPasswordError) {
+                throw new BadRequestException(err.message);
+            }
+            throw err;
+        }
     }
 
     @Post('login')
@@ -131,6 +144,36 @@ export class AuthController {
 
         return {
             message: 'If the email exists, a verification link was sent',
+        };
+    }
+
+    @Post('password-reset/request')
+    @Throttle({
+        default: {
+            limit: 3,
+            ttl: 15 * 60,
+        },
+    })
+    async requestPasswordReset(@Body() dto: RequestPasswordResetDto) {
+        await this.authService.requestPasswordReset(dto.email);
+
+        return {
+            message: 'If the email exists, reset instructions were sent',
+        };
+    }
+
+    @Post('password-reset/confirm')
+    @Throttle({
+        default: {
+            limit: 5,
+            ttl: 10 * 60,
+        },
+    })
+    async confirmPasswordReset(@Body() dto: ConfirmPasswordResetDto) {
+        await this.authService.confirmPasswordReset(dto.token, dto.newPassword);
+
+        return {
+            message: 'Password reset processed'
         };
     }
 }

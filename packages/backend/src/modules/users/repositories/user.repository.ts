@@ -56,4 +56,20 @@ export class UserRepository {
             throw err;
         }
     }
+
+    findById(userId: string): Promise<User | null> {
+        return this.prisma.user.findUnique({
+            where: { id: userId },
+        });
+    }
+
+    updatePasswordAndBumpSession(userId: string, passwordHash: string,): Promise<User> {
+        return this.prisma.user.update({
+            where: { id: userId },
+            data: {
+                password: passwordHash,
+                sessionVersion: { increment: 1 },
+            },
+        });
+    }
 }

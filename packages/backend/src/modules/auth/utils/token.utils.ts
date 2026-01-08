@@ -12,3 +12,17 @@ export function hashToken(token: string): string {
     .update(token)
     .digest('hex');
 }
+
+export function generatePasswordResetToken(): {
+  token: string;
+  tokenHash: string;
+  expiresAt: Date;
+} {
+  const token = generateToken();
+
+  return {
+    token,
+    tokenHash: hashToken(token),
+    expiresAt: new Date(Date.now() + 15 * 60 * 1000)
+  };
+}

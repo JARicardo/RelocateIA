@@ -1,5 +1,5 @@
 import { Injectable, Inject, ConflictException, InternalServerErrorException, UnauthorizedException, Logger } from '@nestjs/common';
-import * as bcrypt from 'bcrypt';
+import { PrismaClient } from '@prisma/client';
 
 //DTOs
 import { RegisterDto } from 'src/modules/auth/dto/register.dto';
@@ -7,16 +7,31 @@ import { LoginDto } from 'src/modules/auth/dto/login.dto';
 
 //SERVICES
 import { EmailVerificationService } from 'src/modules/auth/services/email-verification-token.service';
+import { PasswordHasher } from 'src/modules/auth/services/password-hasher.service';
 
 //REPOSITORIES
 import { UserRepository } from 'src/modules/users/repositories/user.repository';
+import { PasswordResetRepository } from 'src/modules/auth/repositories/password-reset.repository';
+
+//UTILS
+import { generatePasswordResetToken, hashToken } from 'src/modules/auth/utils/token.utils';
+
+import { PASSWORD_POLICY } from 'src/modules/auth/providers/password-policy.provider';
+import type { PasswordPolicy } from 'src/modules/auth/policies/password.policy';
+
 
 @Injectable()
 export class AuthService {
-  
+
   constructor(
-    private readonly userRepository: UserRepository, 
-    private readonly emailVerificationService: EmailVerificationService
+    private readonly prisma: PrismaClient,
+    private readonly userRepository: UserRepository,
+    private readonly passwordResetRepository: PasswordResetRepository,
+    private readonly emailVerificationService: EmailVerificationService,
+    private readonly passwordHasher: PasswordHasher,
+
+    @Inject(PASSWORD_POLICY)
+    private readonly passwordPolicy: PasswordPolicy,
   ) { }
 
   private readonly logger = new Logger(AuthService.name);
@@ -27,10 +42,12 @@ export class AuthService {
     const email = dto.email.toLowerCase().trim();
     const username = dto.username.trim();
 
-    const hashedPassword = await bcrypt.hash(
-      dto.password,
-      Number(process.env.BCRYPT_ROUNDS),
-    );
+    this.passwordPolicy.validate(dto.password, {
+      email,
+      username,
+    });
+
+    const hashedPassword = await this.passwordHasher.hash(dto.password);
 
     let user;
     try {
@@ -71,9 +88,9 @@ export class AuthService {
     // Use a dummy password hash to mitigate timing attacks
     const passwordHash = user?.password ?? this.DUMMY_PASSWORD_HASH;
 
-    const passwordMatches = await bcrypt.compare(
-      dto.password,
+    const passwordMatches = await this.passwordHasher.verify(
       passwordHash,
+      dto.password,
     );
 
     if (!user || !passwordMatches) {
@@ -91,5 +108,54 @@ export class AuthService {
       username: user.username,
       isEmailVerified: user.isEmailVerified,
     };
+  }
+  async requestPasswordReset(email: string): Promise<void> {
+    const user = await this.userRepository.findActiveByEmail(email);
+
+    if (!user) {
+      return;
+    }
+
+    const { token, tokenHash, expiresAt } = generatePasswordResetToken();
+
+    await this.passwordResetRepository.create({
+      userId: user.id,
+      tokenHash,
+      expiresAt,
+    });
+
+    this.logger.log(
+      `Password reset requested for user ${user.id}`,
+    );
+  }
+
+  async confirmPasswordReset(token: string, newPassword: string,): Promise<void> {
+    const tokenHash = hashToken(token);
+
+    await this.prisma.$transaction(async (tx) => {
+      const resetRepo = new PasswordResetRepository(tx);
+      const userRepo = new UserRepository(tx);
+
+      const resetToken = await resetRepo.findValidByTokenHash(tokenHash);
+      if (!resetToken) return;
+
+      const user = await userRepo.findById(resetToken.userId);
+      if (!user) return;
+
+      this.passwordPolicy.validate(newPassword, {
+        email: user.email,
+        username: user.username,
+      });
+
+      const hashedPassword = await this.passwordHasher.hash(newPassword);
+
+      await userRepo.updatePasswordAndBumpSession(
+        user.id,
+        hashedPassword,
+      );
+
+      await resetRepo.markUsed(resetToken.id);
+    });
+
   }
 }
