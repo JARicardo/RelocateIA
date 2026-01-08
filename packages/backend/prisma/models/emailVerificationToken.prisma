@@ -1,0 +1,11 @@
+model EmailVerificationToken {
+  id          String   @id @default(uuid())
+  tokenHash   String
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  expiresAt   DateTime
+  usedAt      DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([tokenHash])
+}

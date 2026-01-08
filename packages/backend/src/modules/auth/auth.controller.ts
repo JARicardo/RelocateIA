@@ -8,26 +8,33 @@ import {
     Logger,
     Req,
     Res,
-    UseGuards
+    UseGuards,
+    Query
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 
 //SERVICES
-import { AuthService } from './auth.service';
+import { AuthService } from 'src/modules/auth/auth.service';
+import { EmailVerificationService } from 'src/modules/auth/services/email-verification-token.service';
 
 //DTOs
-import { RegisterDto } from 'src/auth/dto/register.dto';
-import { LoginDto } from 'src/auth/dto/login.dto';
+import { RegisterDto } from 'src/modules/auth/dto/register.dto';
+import { LoginDto } from 'src/modules/auth/dto/login.dto';
+import { VerifyEmailDto } from 'src/modules/auth/dto/verify-email.dto';
+import { ResendVerificationDto} from 'src/modules/auth/dto/resend-verification.dto';
 
 //GUARDS
-import { IsAuthenticatedGuard } from 'src/auth/guards/is_authtenticated.guard';
+import { IsAuthenticatedGuard } from 'src/modules/auth/guards/is_authtenticated.guard';
 
 @Controller('auth')
 export class AuthController {
     private readonly logger = new Logger(AuthController.name);
 
-    constructor(private readonly authService: AuthService) { }
+    constructor(
+        private readonly authService: AuthService,
+        private readonly emailVerificationService: EmailVerificationService
+    ) { }
 
     @Post('register')
     @Throttle({
@@ -96,5 +103,34 @@ export class AuthController {
     @Get('me')
     getMe(@Req() req: Request) {
         return { userId: req.session.userId };
+    }
+
+    @Get('verify-email')
+    @Throttle({
+        default: {
+            limit: 10,
+            ttl: 60,
+        },
+    })
+    async verifyEmail(@Query() dto: VerifyEmailDto) {
+        await this.emailVerificationService.verifyEmail(dto);
+
+        return { message: 'Email verification processed' };
+    }
+
+    @Post('resend-verification')
+    @Throttle({
+        default: {
+            limit: 3,
+            ttl: 900,
+        },
+    })
+    @HttpCode(HttpStatus.OK)
+    async resendVerification(@Body() dto: ResendVerificationDto) {
+        await this.emailVerificationService.resendVerification(dto);
+
+        return {
+            message: 'If the email exists, a verification link was sent',
+        };
     }
 }

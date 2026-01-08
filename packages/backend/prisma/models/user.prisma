@@ -3,19 +3,21 @@ model User {
   username            String    @unique @default("")
   email               String    @unique
   password            String
-  isEmailVerified     Boolean  @default(false)
+  isEmailVerified     Boolean   @default(false)
   name                String?
   role                Role      @default(USER)
   deleted             Boolean   @default(false)
+  sessionVersion      Int       @default(0)
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
   lastLoginAt         DateTime?
   failedLoginAttempts Int       @default(0)
-  passwordResetToken  String?   @unique
-  passwordResetExpiry DateTime?
+
+  emailVerificationTokens EmailVerificationToken[]
+  passwordResetTokens     PasswordResetToken[]
+  //@@schema("app") used for postgres
 
   @@index([email])
   @@index([deleted])
   @@map("users")
-  //@@schema("app") used for postgres
 }
