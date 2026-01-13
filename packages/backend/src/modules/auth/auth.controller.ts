@@ -12,6 +12,7 @@ import {
     Query
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
+import { randomUUID } from 'crypto';
 import type { Request, Response } from 'express';
 
 //SERVICES
@@ -33,6 +34,7 @@ import { IsAuthenticatedGuard } from 'src/modules/auth/guards/is_authtenticated.
 import { WeakPasswordError } from 'src/modules/auth/errors/weak-password.error';
 import { BadRequestException } from '@nestjs/common/exceptions/bad-request.exception';
 
+
 @Controller('auth')
 export class AuthController {
     private readonly logger = new Logger(AuthController.name);
@@ -42,14 +44,17 @@ export class AuthController {
         private readonly emailVerificationService: EmailVerificationService
     ) { }
 
+    private buildLogContext(req: Request) {
+        return {
+            ip: req.ip,
+            userAgent: req.get('user-agent'),
+            requestId: req.get('x-request-id'),
+        };
+    }
+
     @Post('register')
-    @Throttle({
-        default: {
-            limit: 10,
-            ttl: 60,
-        },
-    })
-    @HttpCode(HttpStatus.OK)
+    @Throttle({ default: { limit: 10, ttl: 60 } })
+    @HttpCode(HttpStatus.CREATED)
     async register(@Body() dto: RegisterDto) {
         try {
             await this.authService.register(dto);
@@ -62,40 +67,38 @@ export class AuthController {
     }
 
     @Post('login')
-    @Throttle({
-        default: {
-            limit: 5,
-            ttl: 60,
-        },
-    })
-    async login(@Body() dto: LoginDto, @Req() request: Request) {
-        const user = await this.authService.login(dto);
+    @Throttle({ default: { limit: 5, ttl: 60 } })
+    @HttpCode(HttpStatus.OK)
+    async login(@Body() dto: LoginDto, @Req() req: Request) {
+        const context = this.buildLogContext(req);
 
-        // Session management
+        const user = await this.authService.login(dto, context);
+
         await new Promise<void>((resolve, reject) => {
-            request.session.regenerate((err) => {
+            req.session.regenerate((err) => {
                 if (err) return reject(err);
                 resolve();
             });
         });
 
-        request.session.userId = user.id;
-        request.session.username = user.username;
-        request.session.isEmailVerified = user.isEmailVerified;
+        req.session.userId = user.id;
+        req.session.username = user.username;
+        req.session.isEmailVerified = user.isEmailVerified;
+
+        this.logger.log('auth.login.success', {
+            userId: user.id,
+            requestId: context.requestId,
+        });
 
         return {
             id: user.id,
-            email: user.email,
-        }
+            username: user.username,
+        };
     }
 
     @Post('logout')
     async logout(@Req() req: Request, @Res() res: Response) {
         const userId = req.session?.userId;
-
-        if (userId) {
-            this.logger.log(`User logged out: ${userId}`);
-        }
 
         if (!req.session) {
             return res.status(200).json({ message: 'Logged out' });
@@ -107,7 +110,8 @@ export class AuthController {
                 return res.status(200).json({ message: 'Logged out' });
             }
 
-            res.clearCookie('connect.sid');
+            res.clearCookie('relocateia.sid');
+            this.logger.log('auth.logout.success', { userId });
             return res.status(200).json({ message: 'Logged out' });
         });
     }
@@ -119,25 +123,21 @@ export class AuthController {
     }
 
     @Get('verify-email')
-    @Throttle({
-        default: {
-            limit: 10,
-            ttl: 60,
-        },
-    })
-    async verifyEmail(@Query() dto: VerifyEmailDto) {
+    @Throttle({ default: { limit: 10, ttl: 60 } })
+    async verifyEmail(@Query() dto: VerifyEmailDto, @Req() req: Request) {
+        const context = this.buildLogContext(req);
+
         await this.emailVerificationService.verifyEmail(dto);
+
+        this.logger.log('Email verified', {
+            requestId: context.requestId ?? randomUUID(),
+        });
 
         return { message: 'Email verification processed' };
     }
 
     @Post('resend-verification')
-    @Throttle({
-        default: {
-            limit: 3,
-            ttl: 900,
-        },
-    })
+    @Throttle({ default: { limit: 3, ttl: 15 * 60 } })
     @HttpCode(HttpStatus.OK)
     async resendVerification(@Body() dto: ResendVerificationDto) {
         await this.emailVerificationService.resendVerification(dto);
@@ -148,12 +148,8 @@ export class AuthController {
     }
 
     @Post('password-reset/request')
-    @Throttle({
-        default: {
-            limit: 3,
-            ttl: 15 * 60,
-        },
-    })
+    @Throttle({ default: { limit: 3, ttl: 15 * 60 } })
+    @HttpCode(HttpStatus.OK)
     async requestPasswordReset(@Body() dto: RequestPasswordResetDto) {
         await this.authService.requestPasswordReset(dto.email);
 
@@ -163,12 +159,8 @@ export class AuthController {
     }
 
     @Post('password-reset/confirm')
-    @Throttle({
-        default: {
-            limit: 5,
-            ttl: 10 * 60,
-        },
-    })
+    @Throttle({ default: { limit: 5, ttl: 10 * 60 } })
+    @HttpCode(HttpStatus.OK)
     async confirmPasswordReset(@Body() dto: ConfirmPasswordResetDto) {
         await this.authService.confirmPasswordReset(dto.token, dto.newPassword);
 

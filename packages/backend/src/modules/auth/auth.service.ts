@@ -16,6 +16,8 @@ import { PasswordResetRepository } from 'src/modules/auth/repositories/password-
 //UTILS
 import { generatePasswordResetToken, hashToken } from 'src/modules/auth/utils/token.utils';
 
+import { AuthLogContext } from 'src/modules/auth/types/auth-log-context';
+
 import { PASSWORD_POLICY } from 'src/modules/auth/providers/password-policy.provider';
 import type { PasswordPolicy } from 'src/modules/auth/policies/password.policy';
 
@@ -26,7 +28,6 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaClient,
     private readonly userRepository: UserRepository,
-    private readonly passwordResetRepository: PasswordResetRepository,
     private readonly emailVerificationService: EmailVerificationService,
     private readonly passwordHasher: PasswordHasher,
 
@@ -42,10 +43,7 @@ export class AuthService {
     const email = dto.email.toLowerCase().trim();
     const username = dto.username.trim();
 
-    this.passwordPolicy.validate(dto.password, {
-      email,
-      username,
-    });
+    this.passwordPolicy.validate(dto.password, { email, username });
 
     const hashedPassword = await this.passwordHasher.hash(dto.password);
 
@@ -63,14 +61,13 @@ export class AuthService {
         );
       }
 
+      this.logger.error('User registration failed', err instanceof Error ? err.stack : undefined);
       throw new InternalServerErrorException('Error creating user');
     }
 
-    const verificationToken = await this.emailVerificationService.generateVerificationToken(user.id);
+    await this.emailVerificationService.generateVerificationToken(user.id);
 
-    console.log(
-      `Verify email link: /verify-email?token=${verificationToken}`,
-    );
+    this.logger.log('auth.register.success', { userId: user.id });
 
     return {
       id: user.id,
@@ -80,27 +77,36 @@ export class AuthService {
     };
   }
 
-  async login(dto: LoginDto) {
+  async login(dto: LoginDto, context?: AuthLogContext) {
     const { email, password } = dto;
 
     const user = await this.userRepository.findActiveByEmail(email.toLowerCase().trim());
 
-    // Use a dummy password hash to mitigate timing attacks
     const passwordHash = user?.password ?? this.DUMMY_PASSWORD_HASH;
 
     const passwordMatches = await this.passwordHasher.verify(
       passwordHash,
-      dto.password,
+      password,
     );
 
     if (!user || !passwordMatches) {
-      this.logger.warn(`Login failed for email: ${email}`);
+      this.logger.warn('auth.login.failed', {
+        reason: 'invalid_credentials',
+        ip: context?.ip,
+        userAgent: context?.userAgent,
+        requestId: context?.requestId,
+      });
       throw new UnauthorizedException('Invalid credentials');
     }
 
     await this.userRepository.updateLastLogin(user.id);
 
-    this.logger.log(`Login successful for email: ${email}`);
+    this.logger.log('auth.login.success', {
+      userId: user.id,
+      ip: context?.ip,
+      userAgent: context?.userAgent,
+      requestId: context?.requestId,
+    });
 
     return {
       id: user.id,
@@ -109,29 +115,34 @@ export class AuthService {
       isEmailVerified: user.isEmailVerified,
     };
   }
+
   async requestPasswordReset(email: string): Promise<void> {
-    const user = await this.userRepository.findActiveByEmail(email);
+    const normalizedEmail = email.toLowerCase().trim();
+    const user = await this.userRepository.findActiveByEmail(normalizedEmail);
 
     if (!user) {
       return;
     }
 
-    const { token, tokenHash, expiresAt } = generatePasswordResetToken();
+    const { tokenHash, expiresAt } = generatePasswordResetToken();
 
-    await this.passwordResetRepository.create({
-      userId: user.id,
-      tokenHash,
-      expiresAt,
+    await this.prisma.$transaction(async (tx) => {
+      const resetRepo = new PasswordResetRepository(tx);
+
+      await resetRepo.create({
+        userId: user.id,
+        tokenHash,
+        expiresAt,
+      });
     });
 
-    this.logger.log(
-      `Password reset requested for user ${user.id}`,
-    );
+    this.logger.log('auth.password_reset.requested', { userId: user.id });
   }
 
   async confirmPasswordReset(token: string, newPassword: string,): Promise<void> {
     const tokenHash = hashToken(token);
 
+    let user;
     await this.prisma.$transaction(async (tx) => {
       const resetRepo = new PasswordResetRepository(tx);
       const userRepo = new UserRepository(tx);
@@ -139,7 +150,7 @@ export class AuthService {
       const resetToken = await resetRepo.findValidByTokenHash(tokenHash);
       if (!resetToken) return;
 
-      const user = await userRepo.findById(resetToken.userId);
+      user = await userRepo.findById(resetToken.userId);
       if (!user) return;
 
       this.passwordPolicy.validate(newPassword, {
@@ -149,13 +160,12 @@ export class AuthService {
 
       const hashedPassword = await this.passwordHasher.hash(newPassword);
 
-      await userRepo.updatePasswordAndBumpSession(
-        user.id,
-        hashedPassword,
-      );
+      await userRepo.updatePasswordAndBumpSession(user.id, hashedPassword);
 
       await resetRepo.markUsed(resetToken.id);
+
     });
 
+    this.logger.log('auth.password_reset.completed', { userId: user.id });
   }
 }
